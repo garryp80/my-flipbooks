@@ -1,1 +1,414 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
+  <title>Laporan Setiausaha - Mesyuarat Tahunan SIB Kawasan Papar 2026</title>
+
+  <!-- Load PDF.js & StPageFlip Engines -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #f4f6f8;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* Top Navigation Bar */
+    .toolbar {
+      height: 52px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      border-bottom: 1px solid #d0d7de;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+      z-index: 10;
+      flex-shrink: 0;
+    }
+    .group { display: flex; align-items: center; gap: 8px; }
+    .btn {
+      background: #ffffff;
+      color: #333;
+      border: 1px solid #d0d7de;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      user-select: none;
+      transition: all 0.15s ease;
+    }
+    .btn:hover { background: #f3f4f6; border-color: #1a73e8; color: #1a73e8; }
+    .page-input {
+      width: 42px;
+      padding: 4px;
+      text-align: center;
+      border: 1px solid #d0d7de;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    /* Main Viewport Stage */
+    #viewport {
+      flex: 1;
+      position: relative;
+      overflow: auto; /* Enables native desktop & touch panning/scrolling */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    #stage {
+      transition: transform 0.15s ease-out;
+      transform-origin: center center;
+      margin: auto;
+    }
+    #book {
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+      display: none;
+      background: #ffffff;
+    }
+    .page { background: #ffffff; overflow: hidden; }
+    .page canvas { width: 100% !important; height: 100% !important; display: block; }
+
+    /* Side Panels */
+    .side-panel {
+      position: absolute;
+      top: 52px;
+      bottom: 0;
+      width: 300px;
+      background: #ffffff;
+      z-index: 20;
+      box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+      display: none;
+      flex-direction: column;
+      padding: 16px;
+      overflow-y: auto;
+      border-right: 1px solid #d0d7de;
+    }
+    .side-panel.left { left: 0; }
+    .search-item {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      padding: 10px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .search-item:hover { background: #e8f0fe; border-color: #1a73e8; }
+
+    /* Loader Screen */
+    #loader {
+      position: absolute;
+      inset: 0;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 30;
+      color: #555;
+    }
+    .spinner {
+      width: 42px;
+      height: 42px;
+      border: 4px solid #e1e4e8;
+      border-top: 4px solid #1a73e8;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 15px;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <div id="loader">
+    <div class="spinner"></div>
+    <div id="loader-status">Loading Document...</div>
+  </div>
+
+  <!-- Top Toolbar -->
+  <div class="toolbar">
+    <div class="group">
+      <button class="btn" id="btn-search">🔍 Search</button>
+      <button class="btn" id="btn-thumbs">🖼️ Pages</button>
+    </div>
+
+    <div class="group">
+      <button class="btn" id="btn-first">⏮ First</button>
+      <button class="btn" id="btn-prev">◀ Prev</button>
+      <span style="font-size:13px;">Page <input type="text" id="input-page" class="page-input" value="1"> of <span id="lbl-total">0</span></span>
+      <button class="btn" id="btn-next">Next ▶</button>
+      <button class="btn" id="btn-last">Last ⏭</button>
+    </div>
+
+    <div class="group">
+      <button class="btn" id="btn-zoom-in">🔍+</button>
+      <button class="btn" id="btn-zoom-out">🔍-</button>
+      <button class="btn" id="btn-reset">↺ Reset</button>
+      <button class="btn" id="btn-fullscreen">⛶ Fullscreen</button>
+    </div>
+  </div>
+
+  <!-- Drawers -->
+  <div class="side-panel left" id="panel-search">
+    <div style="font-weight:bold; margin-bottom:12px; display:flex; justify-content:space-between;">
+      <span>Search Document</span>
+      <span style="cursor:pointer;" id="close-search">✕</span>
+    </div>
+    <input type="text" id="input-search" placeholder="Type word..." style="width:100%; padding:8px; border:1px solid #d0d7de; border-radius:6px; margin-bottom:12px;">
+    <div id="search-results"></div>
+  </div>
+
+  <div class="side-panel left" id="panel-thumbs">
+    <div style="font-weight:bold; margin-bottom:12px; display:flex; justify-content:space-between;">
+      <span>Page Thumbnails</span>
+      <span style="cursor:pointer;" id="close-thumbs">✕</span>
+    </div>
+    <div id="thumb-container" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;"></div>
+  </div>
+
+  <!-- Viewport -->
+  <div id="viewport">
+    <div id="stage">
+      <div id="book"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function() {
+    // Direct relative link to the PDF file in your GitHub repo
+    const PDF_URL = "./Laporan%20Setiausaha%20-%20Mesyuarat%20Tahunan%20SIB%20Kawasan%20Papar%202026.pdf";
+
+    let pageFlip = null;
+    let pdfDoc = null;
+    let zoomLevel = 1.0;
+    let initialPinchDist = null;
+    let initialZoom = 1.0;
+
+    function playSound() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(280, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(70, ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.12);
+      } catch(e) {}
+    }
+
+    fetch(PDF_URL)
+      .then(res => res.arrayBuffer())
+      .then(data => pdfjsLib.getDocument({ data: data, disableWorker: true }).promise)
+      .then(async (pdf) => {
+        pdfDoc = pdf;
+        const totalPages = pdf.numPages;
+        document.getElementById('lbl-total').textContent = totalPages;
+        const bookContainer = document.getElementById('book');
+
+        const page1 = await pdf.getPage(1);
+        const vp1 = page1.getViewport({ scale: 1.0 });
+        const ratio = vp1.height / vp1.width;
+
+        // Auto-fit to 90% of monitor height
+        const availableHeight = window.innerHeight - 80;
+        let baseHeight = Math.min(850, availableHeight * 0.9);
+        let baseWidth = Math.round(baseHeight / ratio);
+
+        if (window.innerWidth < 768) {
+          baseWidth = Math.min(baseWidth, window.innerWidth * 0.88);
+          baseHeight = Math.round(baseWidth * ratio);
+        }
+
+        for (let i = 1; i <= totalPages; i++) {
+          document.getElementById('loader-status').textContent = `Rendering page ${i} of ${totalPages}...`;
+          const page = await pdf.getPage(i);
+          const vp = page.getViewport({ scale: 2.0 }); // Crisp render
+
+          const div = document.createElement('div');
+          div.className = 'page';
+          const canvas = document.createElement('canvas');
+          canvas.height = vp.height;
+          canvas.width = vp.width;
+
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+          div.appendChild(canvas);
+          bookContainer.appendChild(div);
+
+          createThumb(i, canvas.toDataURL());
+        }
+
+        document.getElementById('loader').style.display = 'none';
+        bookContainer.style.display = 'block';
+
+        pageFlip = new St.PageFlip(bookContainer, {
+          width: baseWidth,
+          height: baseHeight,
+          size: "stretch",
+          minWidth: 280,
+          maxWidth: 1400,
+          minHeight: 400,
+          maxHeight: 1800,
+          showCover: true,
+          mobileScrollSupport: false
+        });
+
+        pageFlip.loadFromHTML(document.querySelectorAll('.page'));
+
+        pageFlip.on('flip', (e) => {
+          document.getElementById('input-page').value = e.data + 1;
+          playSound();
+        });
+
+        setupControls();
+      })
+      .catch(err => {
+        document.getElementById('loader-status').innerHTML = "<span style='color:red;'>Failed to load PDF file.</span>";
+      });
+
+    function createThumb(pageNum, dataUrl) {
+      const container = document.getElementById('thumb-container');
+      const item = document.createElement('div');
+      item.style.cssText = "cursor:pointer; text-align:center; font-size:11px; color:#555;";
+      item.innerHTML = `<img src="${dataUrl}" style="width:100%; border:1px solid #d0d7de; border-radius:4px;"><br>Pg ${pageNum}`;
+      item.onclick = () => {
+        pageFlip.flip(pageNum - 1);
+        document.getElementById('panel-thumbs').style.display = 'none';
+      };
+      container.appendChild(item);
+    }
+
+    function setZoom(scale) {
+      zoomLevel = Math.min(Math.max(scale, 0.75), 3.0);
+      document.getElementById('stage').style.transform = `scale(${zoomLevel})`;
+    }
+
+    function setupControls() {
+      // Keyboard Arrow Navigation
+      window.addEventListener('keydown', (e) => {
+        if (document.activeElement.tagName === 'INPUT') return;
+        if (e.key === 'ArrowRight' || e.key === 'PageDown') pageFlip.flipNext();
+        if (e.key === 'ArrowLeft' || e.key === 'PageUp') pageFlip.flipPrev();
+      });
+
+      // Mouse Wheel Zoom (Ctrl + Wheel)
+      document.getElementById('viewport').addEventListener('wheel', (e) => {
+        if (e.ctrlKey) {
+          e.preventDefault();
+          setZoom(e.deltaY < 0 ? zoomLevel + 0.15 : zoomLevel - 0.15);
+        }
+      }, { passive: false });
+
+      // Touch Pinch Zoom
+      const vpEl = document.getElementById('viewport');
+      vpEl.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+          initialPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          initialZoom = zoomLevel;
+        }
+      }, { passive: true });
+
+      vpEl.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 2 && initialPinchDist) {
+          const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          setZoom(initialZoom * (dist / initialPinchDist));
+        }
+      }, { passive: true });
+    }
+
+    // Buttons
+    document.getElementById('btn-prev').onclick = () => pageFlip?.flipPrev();
+    document.getElementById('btn-next').onclick = () => pageFlip?.flipNext();
+    document.getElementById('btn-first').onclick = () => pageFlip?.flip(0);
+    document.getElementById('btn-last').onclick = () => pageFlip?.flip(pdfDoc.numPages - 1);
+
+    document.getElementById('input-page').onchange = (e) => {
+      const p = parseInt(e.target.value);
+      if (p >= 1 && p <= pdfDoc.numPages) pageFlip.flip(p - 1);
+    };
+
+    document.getElementById('btn-zoom-in').onclick = () => setZoom(zoomLevel + 0.25);
+    document.getElementById('btn-zoom-out').onclick = () => setZoom(zoomLevel - 0.25);
+    document.getElementById('btn-reset').onclick = () => setZoom(1.0);
+
+    document.getElementById('btn-thumbs').onclick = () => {
+      const p = document.getElementById('panel-thumbs');
+      p.style.display = p.style.display === 'flex' ? 'none' : 'flex';
+      document.getElementById('panel-search').style.display = 'none';
+    };
+
+    document.getElementById('btn-search').onclick = () => {
+      const p = document.getElementById('panel-search');
+      p.style.display = p.style.display === 'flex' ? 'none' : 'flex';
+      document.getElementById('panel-thumbs').style.display = 'none';
+    };
+
+    document.getElementById('close-search').onclick = () => document.getElementById('panel-search').style.display = 'none';
+    document.getElementById('close-thumbs').onclick = () => document.getElementById('panel-thumbs').style.display = 'none';
+
+    // Fulltext Search
+    document.getElementById('input-search').oninput = async function(e) {
+      const q = e.target.value.toLowerCase().trim();
+      const resContainer = document.getElementById('search-results');
+      resContainer.innerHTML = '';
+      if (q.length < 2 || !pdfDoc) return;
+
+      for (let i = 1; i <= pdfDoc.numPages; i++) {
+        const page = await pdfDoc.getPage(i);
+        const content = await page.getTextContent();
+        const text = content.items.map(item => item.str).join(' ');
+        if (text.toLowerCase().includes(q)) {
+          const idx = text.toLowerCase().indexOf(q);
+          const snippet = text.substring(Math.max(0, idx - 20), Math.min(text.length, idx + 40));
+          const div = document.createElement('div');
+          div.className = 'search-item';
+          div.innerHTML = `<strong>Page ${i}:</strong> ...${snippet}...`;
+          div.onclick = () => {
+            pageFlip.flip(i - 1);
+            document.getElementById('panel-search').style.display = 'none';
+          };
+          resContainer.appendChild(div);
+        }
+      }
+    };
+
+    document.getElementById('btn-fullscreen').onclick = () => {
+      if (!document.fullscreenElement) {
+        document.getElementById('app').requestFullscreen().catch(err => console.error(err));
+      } else {
+        document.exitFullscreen();
+      }
+    };
+  })();
+</script>
+</body>
+</html>
